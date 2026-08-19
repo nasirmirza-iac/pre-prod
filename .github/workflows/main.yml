@@ -1,21 +1,28 @@
-name: Terraform
+name: Terraform Azure CI/CD
 
 on:
   push:
     branches:
-      - "**"
-  workflow_dispatch:
+      - main
+      - 'feature/**'
 
 permissions:
+  id-token: write
   contents: read
 
 env:
   TF_IN_AUTOMATION: true
   TF_INPUT: false
 
+  # Azure authentication
+  ARM_USE_OIDC: true
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
 jobs:
   terraform:
-    name: Terraform
+    name: Terraform Validate, Plan & Apply
     runs-on: self-hosted
 
     defaults:
@@ -23,27 +30,60 @@ jobs:
         working-directory: terraform
 
     steps:
-      - name: Checkout
+
+      # ==============================
+      # Checkout
+      # ==============================
+      - name: Checkout Code
         uses: actions/checkout@v4
 
+      # ==============================
+      # Setup Terraform
+      # ==============================
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # Run on feature branches AND main
+      # ==============================
+      # Azure Login
+      # ==============================
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ==============================
+      # Terraform Init
+      # ==============================
       - name: Terraform Init
         run: terraform init
 
+      # ==============================
+      # Terraform Format
+      # Runs for feature + main
+      # ==============================
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
+      # ==============================
+      # Terraform Validate
+      # Runs for feature + main
+      # ==============================
       - name: Terraform Validate
         run: terraform validate
 
-      # Run plan on feature branches AND main
+      # ==============================
+      # Terraform Plan
+      # Runs for feature + main
+      # ==============================
       - name: Terraform Plan
         run: terraform plan -out=tfplan
 
-      # Apply ONLY when main is pushed
+      # ==============================
+      # Terraform Apply
+      # ONLY runs when main is pushed
+      # ==============================
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve tfplan
